@@ -1,6 +1,5 @@
 const express = require("express");
-const axios = require("axios");
-const cheerio = require("cheerio");
+const puppeteer = require("puppeteer");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,36 +9,38 @@ app.get("/api/pinterest", async (req, res) => {
   if (!query) return res.status(400).json({ error: "Missing query parameter 'q'" });
 
   try {
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const page = await browser.newPage();
+
     const url = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`;
 
-    const { data } = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)" +
-          " Chrome/115.0.0.0 Safari/537.36",
-      },
+    await page.goto(url, { waitUntil: "networkidle2" });
+
+    await page.waitForSelector("img[srcset]", { timeout: 7000 });
+
+    const images = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll("img[srcset]"));
+      return imgs.slice(0, 15).map(img => {
+        const srcset = img.getAttribute("srcset");
+        const urls = srcset.split(",").map(s => s.trim().split(" ")[0]);
+        return urls[urls.length - 1];
+      });
     });
 
-    const $ = cheerio.load(data);
-    const images = [];
-
-    $("img[srcset]").each((i, el) => {
-      if (i >= 15) return false; // max 15 images
-
-      const srcset = $(el).attr("srcset");
-      const urls = srcset.split(",").map((s) => s.trim().split(" ")[0]);
-      const maxResUrl = urls[urls.length - 1];
-
-      images.push(maxResUrl);
-    });
+    await browser.close();
 
     res.json({
       query,
       count: images.length,
-      results: images,
+      results: images
     });
+
   } catch (err) {
-    console.error(err.message);
+    console.error(err);
     res.status(500).json({ error: "Failed to scrape Pinterest images" });
   }
 });

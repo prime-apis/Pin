@@ -1,50 +1,45 @@
 const express = require("express");
-const puppeteer = require("puppeteer");
+const axios = require("axios");
+const cheerio = require("cheerio");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/api/pinterest", async (req, res) => {
-  const query = req.query.q;
-  if (!query) return res.status(400).json({ error: "Missing query parameter 'q'" });
+app.get("/search", async (req, res) => {
+  const query = req.query.query;
+  const count = parseInt(req.query.count) || 5;
+
+  if (!query) return res.status(400).json({ error: "Missing query parameter" });
+
+  const url = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`;
 
   try {
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    const { data } = await axios.get(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+      },
     });
 
-    const page = await browser.newPage();
+    const $ = cheerio.load(data);
+    const imageUrls = [];
 
-    const url = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`;
-
-    await page.goto(url, { waitUntil: "networkidle2" });
-
-    await page.waitForSelector("img[srcset]", { timeout: 7000 });
-
-    const images = await page.evaluate(() => {
-      const imgs = Array.from(document.querySelectorAll("img[srcset]"));
-      return imgs.slice(0, 15).map(img => {
-        const srcset = img.getAttribute("srcset");
-        const urls = srcset.split(",").map(s => s.trim().split(" ")[0]);
-        return urls[urls.length - 1];
-      });
+    $('img[src^="https://i.pinimg.com/"]').each((i, el) => {
+      if (imageUrls.length < count) {
+        imageUrls.push($(el).attr("src"));
+      }
     });
-
-    await browser.close();
 
     res.json({
       query,
-      count: images.length,
-      results: images
+      count: imageUrls.length,
+      results: imageUrls,
     });
-
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to scrape Pinterest images" });
+    res.status(500).json({ error: "Failed to fetch images", details: err.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Pinterest scraper API running on port ${PORT}`);
+  console.log(`Pinterest Scraper API running on http://localhost:${PORT}`);
 });

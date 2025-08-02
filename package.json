@@ -1,17 +1,16 @@
 {
   "name": "pinterest-api",
   "version": "1.0.0",
-  "description": "Pinterest image search scraper",
+  "description": "Pinterest image scraper API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "keywords": [],
   "author": "Eren",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
-    "pinterest-scraper": "^1.3.2",
-    "cors": "^2.8.5"
+    "puppeteer": "^21.3.8"
   }
 }

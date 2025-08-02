@@ -1,39 +1,39 @@
 const express = require("express");
-const axios = require("axios");
-const cheerio = require("cheerio");
+const puppeteer = require("puppeteer");
 
 const app = express();
 
-app.get("/", async (req, res) => {
+app.get("/api/search", async (req, res) => {
   const query = req.query.query;
-  if (!query) return res.status(400).json({ error: "Query required" });
+  const count = parseInt(req.query.count) || 5;
+  if (!query) return res.status(400).json({ error: "Missing query" });
 
   try {
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    const page = await browser.newPage();
     const url = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`;
-    const { data } = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
-      },
-    });
+    await page.goto(url, { waitUntil: "networkidle2" });
+    await page.waitForSelector("img[srcset]", { timeout: 8000 });
 
-    const $ = cheerio.load(data);
-    const imageUrls = [];
+    const images = await page.evaluate((max) => {
+      const elems = Array.from(document.querySelectorAll("img[srcset]"));
+      return elems.slice(0, max).map((img) => {
+        const set = img.getAttribute("srcset");
+        const list = set.split(",").map((s) => s.trim().split(" ")[0]);
+        return list[list.length - 1];
+      });
+    }, count);
 
-    $("img").each((i, el) => {
-      const src = $(el).attr("src");
-      if (src && src.startsWith("https://i.pinimg.com")) imageUrls.push(src);
-    });
-
-    res.json({
-      query,
-      count: imageUrls.length,
-      results: imageUrls.slice(0, 20),
-    });
+    await browser.close();
+    res.json({ query, count: images.length, results: images });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Failed to fetch images" });
+    res.status(500).json({ error: "Scrape failed", detail: err.message });
   }
 });
 
-app.listen(3000, () => console.log("Pinterest image scraper API running on port 3000"));
+app.listen(process.env.PORT || 3000, () =>
+  console.log("Puppeteer Pinterest scraper running")
+);
